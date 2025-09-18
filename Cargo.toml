@@ -1,0 +1,12 @@
+[workspace]
+members = ["xtask"]
+resolver = "2"
+
+[workspace.dependencies]
+anyhow = "1.0"
+clap = { version = "4.0", features = ["derive"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
