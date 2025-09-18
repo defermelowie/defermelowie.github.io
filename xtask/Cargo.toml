@@ -9,7 +9,6 @@ name = "xtask"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = { workspace = true }
-clap = { workspace = true }
-url = "2.5.7"
+clap = { version = "4.0", features = ["derive"] }
 xshell = "0.2.7"
+anyhow = "1.0"
