@@ -17,10 +17,10 @@ fn source_dir() -> Result<PathBuf> {
         .context("site source directory does not exist")
 }
 
-fn deploy_dir() -> Result<PathBuf> {
+fn build_dir() -> Result<PathBuf> {
     env::current_dir()
         .map(|p| p.join("public"))
-        .context("failed to construct deployment path")
+        .context("failed to construct path of build directory")
 }
 
 // -------------------------------------------------------------
@@ -38,10 +38,10 @@ struct Cli {
 enum Commands {
     /// Fetch the theme
     Setup,
+    /// Build the site to `./public`
+    Build,
     /// Serve the site locally for development
     Serve,
-    /// Deploy the site to `./public`
-    Deploy,
     /// Clean build artifacts
     Clean,
 }
@@ -52,8 +52,8 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Setup => setup(&sh),
+        Commands::Build => build(&sh),
         Commands::Serve => serve(&sh),
-        Commands::Deploy => depoy(&sh),
         Commands::Clean => clean(&sh),
     }
 }
@@ -66,15 +66,15 @@ fn setup(sh: &Shell) -> Result<()> {
     // Init submodules
     cmd!(sh, "git submodule update --init").run()?;
 
+    // Install zola
+    cmd !(sh, "cargo install --locked --git https://github.com/getzola/zola").run()?;
+
     // Return success
     Ok(())
 }
 
 fn serve(sh: &Shell) -> Result<()> {
     let source_dir = source_dir()?;
-
-    // Run project setup
-    setup(sh)?;
 
     // Serve site
     sh.change_dir(source_dir);
@@ -84,28 +84,28 @@ fn serve(sh: &Shell) -> Result<()> {
     Ok(())
 }
 
-fn depoy(sh: &Shell) -> Result<()> {
+fn build(sh: &Shell) -> Result<()> {
     let source_dir = source_dir()?;
-    let deploy_dir = deploy_dir()?;
+    let output_dir = build_dir()?;
 
-    // Remove old deployments
+    // Remove old builds
     clean(sh)?;
 
     // First, build the site
     sh.change_dir(source_dir);
-    cmd!(sh, "zola build --output-dir {deploy_dir}").run()?;
+    cmd!(sh, "zola build --output-dir {output_dir}").run()?;
 
     // Return success
     Ok(())
 }
 
 fn clean(_: &Shell) -> Result<()> {
-    let deploy_dir = deploy_dir()?;
+    let output_dir = build_dir()?;
 
-    // Remove deployment directory
-    if deploy_dir.exists() {
-        fs::remove_dir_all(&deploy_dir)
-            .context(format!("could not remove {}", deploy_dir.display()))?;
+    // Remove output directory
+    if output_dir.exists() {
+        fs::remove_dir_all(&output_dir)
+            .context(format!("could not remove {}", output_dir.display()))?;
     }
 
     // Return success
