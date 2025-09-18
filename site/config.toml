@@ -32,19 +32,14 @@ render_emoji = true
 
 # Configuration of search function
 [search]
-# Whether to include the title of the page/section in the index
-include_title = true
-# Whether to include the description of the page/section in the index
-include_description = true
-# Whether to include the RFC3339 datetime of the page in the search index
-include_date = false
-# Whether to include the path of the page/section in the index (the permalink is always included)
 include_path = false
-# Whether to include the rendered content of the page/section in the index
+include_title = true
+include_date = false
+include_description = true
 include_content = true
 
 [extra]
-# theme ∈ {"light", "dark", "auto", "toggle"}
+# Theme ∈ {"light", "dark", "auto", "toggle"}
 theme = "toggle"
 
 # Social links displayed in the header
@@ -58,17 +53,15 @@ menu = [
     { name = "/home", url = "@/_index.md" },
     { name = "/posts", url = "@/post/_index.md" },
     { name = "/about", url = "@/about.md" },
-    # { name = "About", url = "@/about/_index.md" },
 ]
 
-# Site settings
-homepage_layout = "about" # "about" or "list"
+# Theme specific
+fancy_code = true
+dynamic_note = true
 
 # Configuration of the link checker.
 [link_checker]
 
-# Treat internal link problems as either "error" or "warn", default is "error"
+# Treat link problems as either "error" or "warn", default is "error"
 internal_level = "error"
-
-# Treat external link problems as either "error" or "warn", default is "error"
 external_level = "error"

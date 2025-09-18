@@ -1,6 +1,6 @@
 +++
-title = "Whoami"
+title = "$ whoami"
 transparent = true
 +++
 
-I'm a computer researcher at [KU Leuven](https://distrinet.cs.kuleuven.be/people/LowieDeferme) in Belgium :belgium:.
+I'm a researcher at [KU Leuven](https://distrinet.cs.kuleuven.be/people/LowieDeferme) in Belgium :belgium:.
