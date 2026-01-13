@@ -25,6 +25,7 @@ highlight_themes_css = [
   { theme = "base16-ocean-dark", filename = "syntax-theme-dark.css" },
   { theme = "base16-ocean-light", filename = "syntax-theme-light.css" },
 ]
+extra_syntaxes_and_themes = ["syntax"]
 
 # When set to "true", emoji aliases translated to their corresponding
 # Unicode emoji equivalent in the rendered Markdown files. (e.g.: :smile: => 😄)
