@@ -1,16 +1,16 @@
 +++
-title = "Pointer aliasing in rust"
+title = "Pointer aliasing: C vs Rust"
 date = "2025-12-23"
 [taxonomies]
-tags = ["rust"]
+tags = ["rust", "C"]
 +++
 
 # Pointer aliasing?
 
-Under the C abstract machine, multiple pointers may alias (i.e. point) to the same location.
+Under the C abstract machine, various pointers may alias (i.e. point) to the same location.
 For example in the snippet below, both function parameters, `*x` and `*y`, may point to the same memory location.
-This makes it illegal for the compiler to optimize this function by always returning 42 since `*x` may get overwritten using `y`.
-Therefore, the value of `x` must be loaded from memory again after the write using `y`.
+This makes it unsound for the compiler to optimize this function by always returning 42 since `*x` may get overwritten by a write to `*y`.
+Therefore, the value of `*x` must be loaded from memory again after the write to `*y`.
 In the output assembly, this is performed by the load-word instruction on line 6.
 
 <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1em">
@@ -35,11 +35,11 @@ func:
 
 </div>
 
-# Pointer aliasing in rust
+# Pointer aliasing in Rust
 
-In Rust, mutable pointers **are not allowed to alias** because that would violate the [borrowing rules].
-This makes it possible to optimize the return statement of the following rust snippet.
-As shown on line 5, the rust compiler optimizes the extra load away in favour of a load-immediate instruction.
+In Rust, mutable references **are not allowed to alias** because that would violate the [borrowing rules].
+This makes it possible to optimize the return statement of the following Rust snippet.
+As shown on line 5, the Rust compiler optimizes the extra load away in favour of a load-immediate instruction.
 
 <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1em">
 
@@ -63,7 +63,7 @@ func:
 
 </div>
 
-Note that the C code can be made to behave the same as the rust version by informing the compiler that `y` is not allowed to alias `x` using the `restrict` keyword:
+Note that the C code can be made to behave the same as the Rust version by informing the compiler that `y` is not allowed to alias `x` using the `restrict` keyword:
 
 <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1em">
 
@@ -88,3 +88,5 @@ func:
 </div>
 
 [borrowing rules]: https://doc.rust-lang.org/book/ch04-02-references-and-borrowing.html#mutable-references
+
+:construction: Under construction :construction:
