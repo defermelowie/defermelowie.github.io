@@ -1,11 +1,13 @@
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
-extern "C" {
-    pub fn alert(s: &str);
-}
-
-#[wasm_bindgen]
-pub fn search(name: &str) {
-    alert(&format!("Hello, {}!", name));
+pub fn search(query: &str) -> Vec<String> {
+    // For now, return a static list of suggestions
+    // In a real application, you would implement a more sophisticated suggestion system
+    let suggestions = vec![
+        format!("Suggestion 1 for {}", query),
+        format!("Suggestion 2 for {}", query),
+        format!("Suggestion 3 for {}", query),
+    ];
+    suggestions
 }
