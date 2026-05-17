@@ -2,12 +2,13 @@
 
 /**
  * @param {string} query
+ * @param {number} min_len
  * @returns {string[]}
  */
-export function search(query) {
+export function search(query, min_len) {
     const ptr0 = passStringToWasm0(query, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.search(ptr0, len0);
+    const ret = wasm.search(ptr0, len0, min_len);
     var v2 = getArrayJsValueFromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
     return v2;
