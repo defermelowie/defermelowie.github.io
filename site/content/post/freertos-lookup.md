@@ -45,13 +45,16 @@ tags = ["freertos"]
     <div id="suggestions-container" role="listbox" aria-labelledby="search-field"></div>
 </div>
 
+<p id="info-container">Type to show info</p>
+
 <!-- End of content -->
 
 <script type="module">
-    import init, { search } from '/freertos_lookup.js';
+    import init, { search, type_of, doc_url } from '/freertos_lookup.js';
     await init();
     
     const searchField = document.getElementById('search-field');
+    const infoContainer = document.getElementById('info-container');
     const suggestionsContainer = document.getElementById('suggestions-container');
     let selectedSuggestionIdx = -1;
 
@@ -101,6 +104,23 @@ tags = ["freertos"]
         updateSelectedSuggestion(suggestionsContainer.querySelectorAll('.suggestion-item'));
      }
 
+     function showInfo(name) {
+         infoContainer.innerHTML = '';
+         
+         const typeContainer = document.createElement('p');
+         typeContainer.innerText = type_of(name);
+         infoContainer.appendChild(typeContainer);
+
+         const doc_link = doc_url(name);
+         if (typeof doc_link === 'string') {
+             const docContainer = document.createElement('a');
+             docContainer.href = doc_link;
+             docContainer.textContent = 'View Documentation';
+             docContainer.target = '_blank';
+             infoContainer.appendChild(docContainer);
+         }
+     }
+
     // Update the selected suggestion's appearance
     function updateSelectedSuggestion(suggestions) {
         suggestions.forEach((suggestion, index) => {
@@ -120,12 +140,15 @@ tags = ["freertos"]
         searchField.value = suggestion;
         suggestionsContainer.innerHTML = '';
         selectedSuggestionIdx = -1;
+
+        showInfo(suggestion);
     }
 
     // Handle input event
     searchField.addEventListener('input', (event) => {
         const query = event.target.value;
         showSuggestions(query);
+        showInfo(query);
     });
 
     // Handle keyboard navigation
