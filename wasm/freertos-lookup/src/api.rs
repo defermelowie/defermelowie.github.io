@@ -1,80 +1,72 @@
-use crate::naming::{Base, NonStdInt, Sign, Type};
+use crate::{ast, parse};
 
-/// Get an iterator of all (known) FreeRTOS API function names
-pub fn names_iter() -> impl Iterator<Item = &'static str> {
-    API_ITEMS.iter().map(|i| i.name)
-}
-
-/// Retrieve an API item based on its name
-fn find_by_name(name: String) -> Option<ApiItem> {
-    API_ITEMS.iter().find(|&i| i.name == name).cloned()
-}
-
-/// Get documentation url for the given item
-pub fn doc_link(name: String) -> Option<String> {
-    find_by_name(name).map(|i| i.doc_link())
-}
-
-pub fn type_of(name: String) -> Option<String> {
-    find_by_name(name).map(|i| i.return_ty().to_string())
-}
+use std::{borrow::Cow, sync::LazyLock};
 
 #[derive(Clone)]
 struct ApiItem {
-    name: &'static str,
-    doc: &'static str,
-    ty: Type,
+    ident: ast::Ident,
+    docs: Cow<'static, String>,
 }
 
-impl ApiItem {
-    const DOC_BASE_URL: &'static str = "https://www.freertos.org/Documentation";
+impl<'de> serde::Deserialize<'de> for ApiItem {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        // Deserialize the JSON object into a generic JSON value
+        let value = serde_json::Value::deserialize(deserializer)?;
 
-    /// Get the name of this API item
-    const fn name(&self) -> &'static str {
-        self.name
-    }
+        // Extract the "ident" field
+        let mut ident = value
+            .get("ident")
+            .and_then(|v| v.as_str())
+            .and_then(|s| parse::parse_ident(s))
+            .ok_or_else(|| serde::de::Error::custom("Missing 'ident' field"))?;
 
-    /// Get the documentation of this API item
-    fn doc_link(&self) -> String {
-        format!(
-            "{}/{}",
-            Self::DOC_BASE_URL.trim_end_matches('/'),
-            self.doc.trim_start_matches('/')
-        )
-    }
+        // Fill custom return type if provided
+        let name = value
+            .get("returns")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        if let Some(name) = name {
+            ident.fill_custom_type(name.leak());
+        }
 
-    /// Get the return type of this API item
-    fn return_ty(&self) -> Type {
-        self.ty.clone()
+        // Extract the "docs" field
+        let docs = value
+            .get("docs")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .map(|s| Cow::Owned(s))
+            .ok_or_else(|| serde::de::Error::custom("Missing or invalid 'docs' field"))?;
+
+        // Return the result
+        Ok(ApiItem { ident, docs })
     }
 }
 
-const API_ITEMS: [ApiItem; 5] = [
-    // Task creation
-    ApiItem {
-        name: "xTaskCreate",
-        doc: "02-Kernel/04-API-references/01-Task-creation/01-xTaskCreate",
-        ty: NonStdInt::BaseType_t(),
-    },
-    ApiItem {
-        name: "xTaskCreateStatic",
-        doc: "02-Kernel/04-API-references/01-Task-creation/02-xTaskCreateStatic",
-        ty: NonStdInt::TaskHandle_t(),
-    },
-    ApiItem {
-        name: "vTaskDelete",
-        doc: "02-Kernel/04-API-references/01-Task-creation/03-vTaskDelete",
-        ty: Type::Value(Sign::Signed(Base::Void)),
-    },
-    // Task control
-    ApiItem {
-        name: "vTaskDelay",
-        doc: "02-Kernel/04-API-references/02-Task-control/01-vTaskDelay",
-        ty: Type::Value(Sign::Signed(Base::Void)),
-    },
-    ApiItem {
-        name: "xTaskDelayUntil",
-        doc: "02-Kernel/04-API-references/02-Task-control/02-xTaskDelayUntil",
-        ty: NonStdInt::BaseType_t(),
-    },
-];
+const API_ITEMS: LazyLock<Vec<ApiItem>> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../freertos_api.json")).unwrap_or_else(|err| {
+        eprintln!("Failed to parse FreeRTOS API items: {}", err);
+        Vec::new()
+    })
+});
+
+pub fn idents() -> Vec<ast::Ident> {
+    API_ITEMS.iter().map(|i| i.ident.clone()).collect()
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::ast::*;
+
+    #[test]
+    fn idents_contains_first() {
+        let idents = dbg!(idents());
+
+        let mut expected = parse::parse_ident("xTaskCreate").unwrap();
+        expected.fill_custom_type("BaseType_t");
+        assert!(idents.contains(&expected));
+    }
+}

@@ -47,10 +47,23 @@ tags = ["freertos"]
 
 <p id="info-container">Type to show info</p>
 
+# FreeRTOS naming convention
+
+```ebnf
+identifier = variable | function | macro ;
+
+variable   = type, name ;
+function   = ( "prv", name ) | ( type, name ) ;
+macro      = name ;
+
+type       = ["p"], ["u"], "l" | "s" | "c" | "x" | "e" | "v" ;
+name       = ? C ident string ? ;
+```
+
 <!-- End of content -->
 
 <script type="module">
-    import init, { search, type_of, doc_url } from '/freertos_lookup.js';
+    import init, { search, type_of, ident_of, kind_of, doc_url } from '/freertos_lookup.js';
     await init();
     
     const searchField = document.getElementById('search-field');
@@ -106,9 +119,13 @@ tags = ["freertos"]
 
      function showInfo(name) {
          infoContainer.innerHTML = '';
+
+         const nameContainer = document.createElement('h1');
+         nameContainer.innerText = kind_of(name).charAt(0).toUpperCase() + kind_of(name).slice(1) + " " + ident_of(name);
+         infoContainer.appendChild(nameContainer);
          
          const typeContainer = document.createElement('p');
-         typeContainer.innerText = type_of(name);
+         typeContainer.innerText = 'type: ' + type_of(name);
          infoContainer.appendChild(typeContainer);
 
          const doc_link = doc_url(name);
