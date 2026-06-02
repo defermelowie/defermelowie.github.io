@@ -41,8 +41,7 @@ In Rust, mutable references **are not allowed to alias** because that would viol
 This makes it possible to optimize the return statement of the following Rust snippet.
 As shown on line 5, the Rust compiler optimizes the extra load away in favour of a load-immediate instruction.
 
-<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1em">
-
+{% gridcol(spec="2fr 1fr") %}
 ```rust
 fn func(x: &mut u32, y: &mut u32) -> u32 {
     *x = 42;
@@ -60,13 +59,11 @@ func:
     sw a2, 0(a1)
     ret
 ```
-
-</div>
+{% end %}
 
 Note that the C code can be made to behave the same as the Rust version by informing the compiler that `y` is not allowed to alias `x` using the `restrict` keyword:
 
-<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1em">
-
+{% gridcol(spec="2fr 1fr") %}
 ```c
 uint32_t func(uint32_t * restrict x, uint32_t * y) {
     *x = 42;
@@ -84,8 +81,7 @@ func:
     mv a0, a5
     ret
 ```
-
-</div>
+{% end %}
 
 [borrowing rules]: https://doc.rust-lang.org/book/ch04-02-references-and-borrowing.html#mutable-references
 
