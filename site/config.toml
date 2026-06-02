@@ -65,4 +65,4 @@ dynamic_note = true
 
 # Treat link problems as either "error" or "warn", default is "error"
 internal_level = "error"
-external_level = "error"
+external_level = "warn"

@@ -45,7 +45,7 @@ tags = ["freertos"]
     <div id="suggestions-container" role="listbox" aria-labelledby="search-field"></div>
 </div>
 
-<p id="info-container">Type to show info</p>
+<div id="info-container"></div>
 
 # FreeRTOS naming convention
 
