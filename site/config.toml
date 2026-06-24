@@ -59,6 +59,9 @@ menu = [
 # Theme specific
 fancy_code = true
 dynamic_note = true
+stylesheets = [
+    "searchbar.css",
+]
 
 # Configuration of the link checker.
 [link_checker]

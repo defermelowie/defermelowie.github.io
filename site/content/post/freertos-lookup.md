@@ -5,60 +5,28 @@ date = "2026-5-6"
 tags = ["freertos"]
 +++
 
-<style>
-    .centered {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        margin: 0 auto;
-    }
-    
-    #search-field {
-       width: 100%;
-       max-width: 600px;
-       font-size: 1rem;
-       padding: 8px;
-       border: 1px solid #ccc;
-       border-radius: 4px;
-   }
-   
-   #suggestions-container {
-       margin-top: 10px;
-       cursor: pointer;
-   }
-
-   .suggestion-item {
-       padding: 8px 10px;
-       cursor: pointer;
-   }
-   
-   .suggestion-item.selected {
-       background-color: #e9e9e9;
-   }
-</style>
-
-<!-- Start of content -->
-
-<div id="search-container" class="centered">
-    <label for="search-field">Enter a FreeRTOS function name to learn more about it</label>
-    <input type="text" id="search-field" style="width:60%;">
-    <div id="suggestions-container" role="listbox" aria-labelledby="search-field"></div>
-</div>
+{{ searchbar(id="ident" label="Enter a FreeRTOS identifier to learn more about it") }}
 
 <div id="info-container"></div>
 
 # FreeRTOS naming convention
 
+The hungarian naming scheme used by FreeRTOS can be represented as follows:
+
 ```ebnf
-identifier = variable | function | macro ;
+identifier   = typed_ident | prv_function | macro ;
 
-variable   = type, name ;
-function   = ( "prv", name ) | ( type, name ) ;
-macro      = name ;
+typed_ident  = type, name ;
+prv_function = "prv", name ;
+macro        = ? C identifier: lowercase module prefix, UPPER_SNAKE_CASE body ? ;
 
-type       = ["p"], ["u"], "l" | "s" | "c" | "x" | "e" | "v" ;
-name       = ? C ident string ? ;
+type         = ["p"], ["u"], base_type ;
+base_type    = "l" | "s" | "c" | "x" | "e" | "v" ;
+name         = ? PascalCase C identifier ? ;
 ```
+
+Note that `typed_ident` covers both variables and API functions &mdash; they are syntactically identical and cannot be distinguished by name alone.
+Instead, this lookup tool allows to make a distinction by putting parenthesis after a function identifier.
 
 <!-- End of content -->
 
@@ -66,9 +34,9 @@ name       = ? C ident string ? ;
     import init, { search, type_of, ident_of, kind_of, doc_url } from '/freertos_lookup.js';
     await init();
     
-    const searchField = document.getElementById('search-field');
+    const searchField = document.getElementById('search-ident-field');
     const infoContainer = document.getElementById('info-container');
-    const suggestionsContainer = document.getElementById('suggestions-container');
+    const suggestionsContainer = document.getElementById('suggest-ident-container');
     let selectedSuggestionIdx = -1;
 
     /** 
