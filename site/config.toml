@@ -31,6 +31,8 @@ extra_syntaxes_and_themes = ["syntax"]
 # Unicode emoji equivalent in the rendered Markdown files. (e.g.: :smile: => 😄)
 render_emoji = true
 
+github_alerts = true
+
 # Configuration of search function
 [search]
 include_path = false
