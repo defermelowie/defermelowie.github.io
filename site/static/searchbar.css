@@ -1,0 +1,29 @@
+.search-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0 auto;
+}
+
+.search-field {
+    width: 60%;
+    max-width: 600px;
+    font-size: 1rem;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.suggestion-container {
+    margin-top: 10px;
+    cursor: pointer;
+}
+
+.suggestion-item {
+    padding: 8px 10px;
+    cursor: pointer;
+}
+
+.suggestion-item.selected {
+    background-color: #e9e9e9;
+}
