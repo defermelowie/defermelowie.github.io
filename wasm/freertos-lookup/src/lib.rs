@@ -5,6 +5,7 @@ use crate::ast::Ident;
 mod api;
 mod ast;
 mod parse;
+mod tokens;
 
 #[wasm_bindgen]
 pub fn search(query: &str, min_len: usize) -> Vec<String> {
