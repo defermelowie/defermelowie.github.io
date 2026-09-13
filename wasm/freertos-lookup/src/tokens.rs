@@ -1,7 +1,7 @@
 //! Split FreeRTOS identifiers into their tokens
 
 #[derive(Debug, PartialEq)]
-pub(super) enum Token {
+pub(crate) enum Token {
     Prefix(String),
     Ident(String),
     LParam,
@@ -33,7 +33,7 @@ impl Token {
 ///
 /// Whitespace is discarded; `(`, `)`, and `,` become their own tokens.
 /// Never panics, even on malformed/untrusted input.
-pub(super) fn tokenize<S: AsRef<str>>(s: S) -> Vec<Token> {
+pub(crate) fn tokenize<S: AsRef<str>>(s: S) -> Vec<Token> {
     // All names are expected to start with a prefix; the token currently
     // being built is always `tokens`'s last element.
     let mut tokens = vec![Token::Prefix(String::new())];

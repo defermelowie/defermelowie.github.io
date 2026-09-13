@@ -7,7 +7,7 @@ use std::fmt::Write;
 pub(crate) enum Ident {
     Variable(Var),
     Function(Fun),
-    Macro(Macro),
+    Macro(Mac),
 }
 
 impl Ident {
@@ -154,20 +154,20 @@ impl std::fmt::Display for Fun {
 
 /// A FreeRTOS macro
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub(crate) struct Macro {
+pub(crate) struct Mac {
     /// The file where the macro is defined
     file: String,
     /// The name of the macro
     name: String,
 }
 
-impl Macro {
+impl Mac {
     pub const fn new(file: String, name: String) -> Self {
         Self { file, name }
     }
 }
 
-impl std::fmt::Display for Macro {
+impl std::fmt::Display for Mac {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{}", self.file, self.name)
     }

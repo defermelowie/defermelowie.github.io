@@ -1,10 +1,10 @@
-use crate::{ast, parse};
+use crate::parse::Identifier;
 
 use std::{borrow::Cow, sync::LazyLock};
 
 #[derive(Clone)]
 struct ApiItem {
-    ident: ast::Ident,
+    ident: Identifier,
     docs: Cow<'static, String>,
 }
 
@@ -17,10 +17,10 @@ impl<'de> serde::Deserialize<'de> for ApiItem {
         let value = serde_json::Value::deserialize(deserializer)?;
 
         // Extract the "ident" field
-        let mut ident = value
+        let ident = value
             .get("ident")
             .and_then(|v| v.as_str())
-            .and_then(|s| parse::parse_ident(s))
+            .and_then(|s| s.parse::<Identifier>().ok())
             .ok_or_else(|| serde::de::Error::custom("Missing 'ident' field"))?;
 
         // Fill custom return type if provided
@@ -29,7 +29,8 @@ impl<'de> serde::Deserialize<'de> for ApiItem {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
         if let Some(name) = name {
-            ident.fill_custom_type(name.leak());
+            // TODO: the new parser doesn't support custom types yet
+            todo!("custom return-type filling ('{name}') not yet supported by the new parser");
         }
 
         // Extract the "docs" field
@@ -52,21 +53,18 @@ const API_ITEMS: LazyLock<Vec<ApiItem>> = LazyLock::new(|| {
     })
 });
 
-pub fn idents() -> Vec<ast::Ident> {
+pub fn idents() -> Vec<Identifier> {
     API_ITEMS.iter().map(|i| i.ident.clone()).collect()
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::ast::*;
 
     #[test]
     fn idents_contains_first() {
-        let idents = dbg!(idents());
-
-        let mut expected = parse::parse_ident("xTaskCreate").unwrap();
-        expected.fill_custom_type("BaseType_t");
-        assert!(idents.contains(&expected));
+        // TODO: needs the new parser's custom-type support (`BaseType_t`) to
+        // reconstruct the expected `xTaskCreate` identifier
+        todo!("update once custom return types are supported by the new parser");
     }
 }

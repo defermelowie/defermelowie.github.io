@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::*;
 
-use crate::ast::Ident;
+use crate::parse::Identifier;
 
 mod api;
 mod ast;
@@ -9,42 +9,37 @@ mod tokens;
 
 #[wasm_bindgen]
 pub fn search(query: &str, min_len: usize) -> Vec<String> {
-    let sanitized_query = query.trim().to_lowercase();
     let mut suggestions = vec![query.to_string()];
     if query.len() >= min_len {
-        suggestions.extend(
-            api::idents()
-                .iter()
-                .map(|i| i.ident_str())
-                .filter(|s| s.to_lowercase().starts_with(&sanitized_query)) // Filter out different prefixes
-                .filter(|s| s.ne(query)) // Filter out exact match
-                .map(|s| s.to_string()),
-        );
+        // TODO: needs an Identifier -> String formatter (the old `ident_str`)
+        todo!("Identifier -> String formatting not yet implemented by the new parser");
     }
     suggestions
 }
 
-fn parse_if_not_known(query: &str) -> Option<Ident> {
+fn parse_if_not_known(query: &str) -> Option<Identifier> {
     api::idents()
         .iter()
-        .find(|i| i.ident_str() == query)
+        .find(|_i| {
+            // TODO: needs an Identifier -> String formatter (the old `ident_str`)
+            todo!("Identifier -> String formatting not yet implemented by the new parser")
+        })
         .cloned()
-        .or_else(|| parse::parse_ident(query.trim()))
+        .or_else(|| query.trim().parse::<Identifier>().ok())
 }
 
 #[wasm_bindgen]
 pub fn type_of(query: &str) -> String {
-    let ident = parse_if_not_known(query);
-    let ty = ident.and_then(|i| i.ty());
-    ty.map(|t| t.to_string()).unwrap_or("unknown".to_string())
+    let _ident = parse_if_not_known(query);
+    // TODO: needs Identifier::ty() and a Type -> String formatter
+    todo!("Identifier -> Type formatting not yet implemented by the new parser")
 }
 
 #[wasm_bindgen]
 pub fn ident_of(query: &str) -> String {
-    let ident = parse_if_not_known(query);
-    ident
-        .map(|i| i.ident_str())
-        .unwrap_or("parsing failed".to_string())
+    let _ident = parse_if_not_known(query);
+    // TODO: needs an Identifier -> String formatter (the old `ident_str`)
+    todo!("Identifier -> String formatting not yet implemented by the new parser")
 }
 
 #[wasm_bindgen]

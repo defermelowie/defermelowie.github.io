@@ -1,347 +1,708 @@
-//! Recursive descent parser for FreeRTOS identfiers
+//! Parser for FreeRTOS identifiers, built on the token stream produced by
+//! [`tokens::tokenize`].
 //!
 //! Doc: https://freertos.org/Documentation/02-Kernel/06-Coding-guidelines/02-FreeRTOS-Coding-Standard-and-Style-Guide#naming-conventions
 
-use crate::ast;
-use scan::{ScanAction, Scanner};
+use std::fmt::Write;
 
-/// Types that can be parsed from a [Scanner]
-trait Parse: Sized {
-    fn parse(sc: &mut Scanner) -> Option<Self>;
+use crate::tokens::{self, Token};
+
+/// A parse error
+// TODO: implement `std::error::Error` (+ `Display`) so this composes with
+// `?`, `Box<dyn Error>`, etc. like a proper error type.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ParseErr {
+    MissingPrefix,
+    MissingIdent,
+    UnknownPrefix,
+    IllegalFunctionName,
+    IllegalVariableName,
+    IllegalMacroName,
 }
 
-impl Parse for ast::Ty {
-    fn parse(sc: &mut Scanner) -> Option<Self> {
-        let pointer = sc.take('p').is_some();
-        let signed = sc.take('u').is_none();
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum BaseTy {
+    Char,
+    Short,
+    Long,
+    Enum,
+    Void,
+    Custom,
+}
 
-        sc.transform(|c| match c {
-            'l' => Some(ast::Ty::new_long(signed)),
-            's' => Some(ast::Ty::new_short(signed)),
-            'c' => Some(ast::Ty::new_char(signed)),
-            'x' => Some(ast::Ty::new(signed, None)),
-            'e' => Some(ast::Ty::new_enum(signed)),
-            'v' => Some(ast::Ty::new_void()),
-            _ => None,
+impl BaseTy {
+    /// Does this base type have a fixed-width `stdint.h` name (`int32_t`, ...)?
+    const fn is_stdint(&self) -> bool {
+        matches!(self, BaseTy::Long | BaseTy::Short | BaseTy::Char)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(crate) struct Type {
+    ty: BaseTy,
+    /// Is this a pointer type?
+    ptr: bool,
+    /// Is this a signed type?
+    sign: bool,
+}
+
+#[rustfmt::skip]
+impl Type {
+    pub const UINT32_T: Self = Self { ptr: false, sign: false, ty: BaseTy::Long };
+    pub const INT32_T: Self  = Self { ptr: false, sign: true,  ty: BaseTy::Long };
+    pub const UINT16_T: Self = Self { ptr: false, sign: false, ty: BaseTy::Short };
+    pub const INT16_T: Self  = Self { ptr: false, sign: true,  ty: BaseTy::Short };
+    pub const UINT8_T: Self  = Self { ptr: false, sign: false, ty: BaseTy::Char };
+    pub const INT8_T: Self   = Self { ptr: false, sign: true,  ty: BaseTy::Char };
+    pub const VOID: Self     = Self { ptr: false, sign: true,  ty: BaseTy::Void };
+ }
+
+impl Type {
+    /// Convert a type to its pointer variant
+    pub const fn to_ptr(mut self) -> Self {
+        self.ptr = true;
+        self
+    }
+
+    /// Write the Hungarian-notation type prefix for this type -- the
+    /// inverse of [`Type::from_str`](std::str::FromStr::from_str).
+    fn write_prefix(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.ptr {
+            f.write_char('p')?;
+        }
+        if !self.sign {
+            f.write_char('u')?;
+        }
+        f.write_char(match self.ty {
+            BaseTy::Long => 'l',
+            BaseTy::Short => 's',
+            BaseTy::Char => 'c',
+            BaseTy::Enum => 'e',
+            BaseTy::Void => 'v',
+            BaseTy::Custom => 'x',
         })
-        .map(|ty| if pointer { ty.ptr() } else { ty })
     }
 }
 
-impl Parse for ast::Var {
-    fn parse(sc: &mut Scanner) -> Option<Self> {
-        let ty = ast::Ty::parse(sc)?;
-        let name = sc.scan(|str| ScanAction::Request(str.to_string()))?;
-        Some(ast::Var::new(ty, name))
-    }
-}
+impl std::str::FromStr for Type {
+    type Err = ParseErr;
 
-impl Parse for ast::Fun {
-    fn parse(sc: &mut Scanner) -> Option<Self> {
-        // Store cursor such that we can later reset the scanner if needed
-        let cursor = sc.cursor();
+    /// Decode a Hungarian-notation type prefix (`p`? `u`? then one of `l s c x e v`)
+    /// into a [`Type`].
+    ///
+    /// Returns `Err` unless `s` is *entirely* consumed by the grammar, so
+    /// e.g. `"config"` is never mistaken for the `"c"` (char) type prefix.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut chars = s.chars();
 
-        // Try to parse as privileged function
-        sc.set_cursor(cursor); // Reset cursor
-        let prv = sc.scan(|str| match str {
-            // Explicit prefix match: cheaper than target.starts_with(str) for short targets?
-            "p" => ScanAction::Require,
-            "pr" => ScanAction::Require,
-            "prv" => ScanAction::Return(true),
-            _ => ScanAction::Abort,
-        });
-        let name = prv.and_then(|_| sc.scan(|str| ScanAction::Request(str.to_string())));
-        // FIXME: functions should have parameter list: uxGetTaskCounter(...)
-        if let Some(name) = name {
-            return Some(ast::Fun::Privileged { name });
+        let ptr = chars.as_str().starts_with('p');
+        if ptr {
+            chars.next();
         }
 
-        // Try to parse as API function
-        sc.set_cursor(cursor); // Reset cursor
-        let ty = ast::Ty::parse(sc);
-        let name = ty.and_then(|_| sc.scan(|str| ScanAction::Request(str.to_string())));
-        // FIXME: functions should have parameter list: uxGetTaskCounter(...)
-        if let Some(ret) = ty
-            && let Some(name) = name
-        {
-            return Some(ast::Fun::Api { ret, name });
+        let unsigned = chars.as_str().starts_with('u');
+        if unsigned {
+            chars.next();
         }
+        let sign = !unsigned;
 
-        // Parsing failed
-        None
-    }
-}
+        let ty = match chars.next() {
+            Some('l') => BaseTy::Long,
+            Some('s') => BaseTy::Short,
+            Some('c') => BaseTy::Char,
+            Some('x') => BaseTy::Custom,
+            Some('e') => BaseTy::Enum,
+            Some('v') => BaseTy::Void,
+            _ => return Err(ParseErr::UnknownPrefix),
+        };
 
-impl Parse for ast::Macro {
-    fn parse(sc: &mut Scanner) -> Option<Self> {
-        let file = sc.scan(|str| {
-            if str.chars().all(|c| c.is_ascii_lowercase() || c == '_') {
-                ScanAction::Request(dbg!(str.to_string()))
-            } else {
-                ScanAction::Abort
-            }
-        })?;
-        let name = sc.scan(|str| {
-            if str.chars().all(|c| c.is_ascii_uppercase() || c == '_') {
-                ScanAction::Request(dbg!(str.to_string()))
-            } else {
-                ScanAction::Abort
-            }
-        })?;
-        Some(ast::Macro::new(file, name))
-    }
-}
-
-pub(crate) fn parse_ident<S: Into<Scanner>>(ident: S) -> Option<ast::Ident> {
-    let mut sc = ident.into();
-    let cursor = sc.cursor();
-
-    // Try to parse as function
-    sc.set_cursor(cursor); // Reset cursor
-    if let Some(fun) = ast::Fun::parse(&mut sc) {
-        return Some(ast::Ident::Function(fun));
-    }
-
-    // Try to parse as variable
-    sc.set_cursor(cursor); // Reset cursor
-    if let Some(var) = ast::Var::parse(&mut sc) {
-        return Some(ast::Ident::Variable(var));
-    }
-
-    // Try to parse as macro
-    sc.set_cursor(cursor); // Reset cursor
-    if let Some(mac) = ast::Macro::parse(&mut sc) {
-        return Some(ast::Ident::Macro(mac));
-    }
-
-    // Parsing failed
-    None
-}
-
-/// Helper for writing parsers
-mod scan {
-    pub(super) enum ScanAction<T> {
-        /// If next iteration returns [Self::Abort], return T without advancing
-        /// the cursor. I.e. request more (optional) characters for further
-        /// parsing.
-        Request(T),
-
-        /// If the next iteration returns [Self::Abort], return [None] without advancing
-        /// the cursor. I.e. require more characters for successful parsing.
-        Require,
-
-        /// Immediately advance the cursor and return T.
-        Return(T),
-
-        /// Continue scanning for more characters if available.
-        Continue,
-
-        /// Abort scanning. Return the last request or [None] if parsing
-        /// requires more characters.
-        Abort,
-    }
-
-    /// Wrapper around cursor value
-    #[derive(Clone, Copy)]
-    pub(super) struct ScanCursor(usize);
-
-    #[derive(Debug)]
-    pub(super) struct Scanner {
-        cursor: usize,
-        chars: Vec<char>,
-    }
-
-    impl Scanner {
-        /// Create a new scanner for a given string
-        pub fn new<S: AsRef<str>>(string: S) -> Self {
-            Self {
-                cursor: 0,
-                chars: string.as_ref().chars().collect(),
-            }
-        }
-
-        /// Get the current cursor position
-        #[inline]
-        pub fn cursor(&self) -> ScanCursor {
-            ScanCursor(self.cursor)
-        }
-
-        /// (Re)set the cursor
-        #[inline]
-        pub fn set_cursor(&mut self, cursor: ScanCursor) {
-            self.cursor = cursor.0
-        }
-
-        // Peek at the next character if it exists,
-        // returns `None` otherwise
-        #[inline]
-        fn peek(&self) -> Option<&char> {
-            self.chars.get(self.cursor)
-        }
-
-        /// Pop the next character from the buffer.
-        /// Returns `None` if there is no next character.
-        fn pop(&mut self) -> Option<&char> {
-            // NOTE: can't reuse peek here since it would borrow entire self, blocking the cursor update
-            match self.chars.get(self.cursor) {
-                Some(c) => {
-                    self.cursor += 1;
-                    Some(c)
-                }
-                None => None,
-            }
-        }
-
-        /// Returns `Some(c)` if and only if the next character matches `c`.
-        /// Also advances the cursor in case of a match
-        pub fn take(&mut self, c: char) -> Option<&char> {
-            match self.peek() {
-                Some(char) if char == &c => self.pop(),
-                _ => None,
-            }
-        }
-
-        /// Transforms a character into a value according to the provided function.
-        /// Returns `None` if there is no next character or the provided function returns `None`.
-        pub fn transform<T>(&mut self, cb: impl FnOnce(&char) -> Option<T>) -> Option<T> {
-            let res = self.peek().map(cb).flatten();
-            if res.is_some() {
-                let _ = self.pop();
-            }
-            res
-        }
-
-        /// Scans a string of characters and transforms it into a value according to the provided function.
-        pub fn scan<T>(&mut self, cb: impl Fn(&str) -> ScanAction<T>) -> Option<T> {
-            let mut sequence = String::new();
-            let mut require = false;
-            let mut request = None;
-
-            while let Some(ch) = self.peek() {
-                sequence.push(*ch);
-
-                match cb(&sequence) {
-                    ScanAction::Return(result) => {
-                        self.cursor += 1;
-                        return Some(result);
-                    }
-                    ScanAction::Request(result) => {
-                        self.cursor += 1;
-                        require = false;
-                        request = Some(result);
-                    }
-                    ScanAction::Require => {
-                        self.cursor += 1;
-                        require = true;
-                    }
-                    ScanAction::Continue => {
-                        self.cursor += 1;
-                    }
-                    ScanAction::Abort => {
-                        if require {
-                            return None;
-                        } else {
-                            return request;
-                        }
-                    }
-                }
-            }
-            // No more characters available
-            if require {
-                return None;
-            } else {
-                return request;
-            }
-        }
-    }
-
-    impl<S: AsRef<str>> From<S> for Scanner {
-        fn from(value: S) -> Self {
-            Scanner::new(value)
+        // The whole prefix must be consumed, or this isn't a type prefix at
+        // all (e.g. `config`, `port`, ...).
+        if chars.next().is_none() {
+            Ok(Type { ty, ptr, sign })
+        } else {
+            Err(ParseErr::UnknownPrefix)
         }
     }
 }
 
-/// Test various [Parse] implementations
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.ty.is_stdint() {
+            if self.ptr {
+                f.write_char('*')?;
+            }
+            if !self.sign {
+                f.write_char('u')?;
+            }
+        } else {
+            if !self.sign {
+                f.write_str("unsigned ")?;
+            }
+            if self.ptr {
+                f.write_char('*')?;
+            }
+        }
+
+        let base_name = match self.ty {
+            BaseTy::Long => "int32_t",
+            BaseTy::Short => "int16_t",
+            BaseTy::Char => "int8_t",
+            BaseTy::Enum => "enum",
+            BaseTy::Void => "void",
+            BaseTy::Custom => "custom",
+        };
+        f.write_str(base_name)
+    }
+}
+
+/// A FreeRTOS variable
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub(crate) struct Variable {
+    /// Type of the variable
+    ty: Type,
+    /// Name of the variable
+    name: String,
+}
+
+impl std::fmt::Display for Variable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.ty.write_prefix(f)?;
+        f.write_str(&self.name)
+    }
+}
+
+/// A FreeRTOS function
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub(crate) struct Function {
+    /// Return type if not privileged, `None` otherwise
+    ret_ty: Option<Type>,
+    /// Name of the function
+    name: String,
+}
+
+impl std::fmt::Display for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.ret_ty {
+            None => write!(f, "prv{}", self.name),
+            Some(ret_ty) => {
+                ret_ty.write_prefix(f)?;
+                f.write_str(&self.name)
+            }
+        }
+    }
+}
+
+/// A FreeRTOS macro
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub(crate) struct Macro {
+    /// Module with macro definition
+    module: String,
+    /// Name of the macro
+    name: String,
+}
+
+impl std::fmt::Display for Macro {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.module, self.name)
+    }
+}
+
+/// A FreeRTOS identifier
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub(crate) enum Identifier {
+    Var(Variable),
+    Fun(Function),
+    Mac(Macro),
+}
+
+impl Identifier {
+    /// A short string naming this identifier's kind -- variable, function or macro
+    pub(crate) fn kind_str(&self) -> &'static str {
+        match self {
+            Identifier::Var(_) => "variable",
+            Identifier::Fun(_) => "function",
+            Identifier::Mac(_) => "macro",
+        }
+    }
+}
+
+impl std::fmt::Display for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Identifier::Var(var) => var.fmt(f),
+            Identifier::Fun(fun) => fun.fmt(f),
+            Identifier::Mac(mac) => mac.fmt(f),
+        }
+    }
+}
+
+impl std::str::FromStr for Identifier {
+    type Err = ParseErr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parse(&tokens::tokenize(s))
+    }
+}
+
+fn parse(tokens: &[Token]) -> Result<Identifier, ParseErr> {
+    let mut tokens = tokens.iter(); // Convert to iterator
+    // Expect the first token to be a prefix
+    let Some(Token::Prefix(prefix)) = tokens.next() else {
+        return Err(ParseErr::MissingPrefix);
+    };
+    // Expect the second token to be a ident (name)
+    let Some(Token::Ident(name)) = tokens.next() else {
+        return Err(ParseErr::MissingIdent);
+    };
+    let name = name.to_owned();
+    // If the third token is a '(' we're dealing with a fn
+    let has_call = matches!(tokens.next(), Some(Token::LParam));
+
+    // Try to parse prefix to type
+    if let Ok(ty) = prefix.parse::<Type>() {
+        // Parsing succeeded => variable or API function, differentiate using `has_call`
+        if has_call {
+            ensure(is_pascal_case(&name), ParseErr::IllegalFunctionName)?;
+            Ok(Identifier::Fun(Function {
+                ret_ty: Some(ty),
+                name,
+            }))
+        } else {
+            ensure(is_pascal_case(&name), ParseErr::IllegalVariableName)?;
+            Ok(Identifier::Var(Variable { ty, name }))
+        }
+    } else {
+        // Parsing failed => macro or priv function, differentiate using `is_priv` & valid macro nameing
+        if prefix == "prv" {
+            ensure(is_pascal_case(&name), ParseErr::IllegalFunctionName)?;
+            Ok(Identifier::Fun(Function { ret_ty: None, name }))
+        } else if is_snake_case(prefix) {
+            ensure(is_screaming_snake_case(&name), ParseErr::IllegalMacroName)?;
+            Ok(Identifier::Mac(Macro {
+                module: prefix.to_owned(),
+                name,
+            }))
+        } else {
+            Err(ParseErr::UnknownPrefix)
+        }
+    }
+}
+
+/// Return `Err(err)` unless `cond` holds.
+fn ensure(cond: bool, err: ParseErr) -> Result<(), ParseErr> {
+    if cond { Ok(()) } else { Err(err) }
+}
+
+/// Checks whether `s` is written in `PascalCase`.
+fn is_pascal_case(s: &str) -> bool {
+    let mut chars = s.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_uppercase())
+        && chars.all(|c| c.is_ascii_alphanumeric())
+}
+
+/// Checks whether `s` is written in `snake_case`.
+fn is_snake_case(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+/// Checks whether `s` is written in `SCREAMING_SNAKE_CASE`.
+fn is_screaming_snake_case(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::ast::*;
 
     #[test]
-    fn test_parse_ty() {
-        let ty = Ty::parse(&mut Scanner::new("ul")).unwrap();
-        assert_eq!(ty, Ty::UINT32_T);
-
-        let ty = Ty::parse(&mut Scanner::new("px")).unwrap();
-        assert_eq!(ty, Ty::new(true, None).ptr());
-
-        assert!(Ty::parse(&mut Scanner::new("prv")).is_none());
+    fn display_formats_stdint_types() {
+        assert_eq!(Type::UINT32_T.to_string(), "uint32_t");
+        assert_eq!(Type::INT32_T.to_string(), "int32_t");
+        assert_eq!(Type::UINT16_T.to_string(), "uint16_t");
+        assert_eq!(Type::INT16_T.to_string(), "int16_t");
+        assert_eq!(Type::UINT8_T.to_string(), "uint8_t");
+        assert_eq!(Type::INT8_T.to_string(), "int8_t");
     }
 
     #[test]
-    fn test_parse_var() {
-        let var = Var::parse(&mut Scanner::new("ulA")).unwrap();
-        assert_eq!(var, Var::new(Ty::UINT32_T, "A".to_string()));
-
-        let var = Var::parse(&mut Scanner::new("pcCounter")).unwrap();
-        assert_eq!(var, Var::new(Ty::INT8_T.ptr(), "Counter".to_string()));
-
-        assert!(Var::parse(&mut Scanner::new("prvCounter")).is_none());
+    fn display_formats_pointer_to_stdint_type() {
+        assert_eq!(Type::UINT8_T.to_ptr().to_string(), "*uint8_t");
+        assert_eq!(Type::INT32_T.to_ptr().to_string(), "*int32_t");
     }
 
     #[test]
-    fn test_parse_fun() {
-        let fun = Fun::parse(&mut Scanner::new("vQueueDelete")).unwrap();
+    fn display_formats_void() {
+        assert_eq!(Type::VOID.to_string(), "void");
+    }
+
+    #[test]
+    fn display_formats_non_stdint_types() {
+        // Non-stdint types put `unsigned`/`*` differently: `unsigned ` as a
+        // word prefix, and the `*` after it rather than before.
         assert_eq!(
-            fun,
-            Fun::Api {
-                ret: Ty::VOID,
+            Type {
+                ty: BaseTy::Enum,
+                ptr: false,
+                sign: true
+            }
+            .to_string(),
+            "enum"
+        );
+        assert_eq!(
+            Type {
+                ty: BaseTy::Enum,
+                ptr: false,
+                sign: false
+            }
+            .to_string(),
+            "unsigned enum"
+        );
+        assert_eq!(
+            Type {
+                ty: BaseTy::Enum,
+                ptr: true,
+                sign: true
+            }
+            .to_string(),
+            "*enum"
+        );
+    }
+
+    #[test]
+    fn display_formats_custom_type() {
+        let ty = Type {
+            ty: BaseTy::Custom,
+            ptr: false,
+            sign: true,
+        };
+        assert_eq!(ty.to_string(), "custom");
+        assert_eq!(
+            Variable {
+                ty,
+                name: "QueueHandle".to_string()
+            }
+            .to_string(),
+            "xQueueHandle"
+        );
+        assert_eq!(
+            Function {
+                ret_ty: Some(ty),
+                name: "TaskCreate".to_string()
+            }
+            .to_string(),
+            "xTaskCreate"
+        );
+    }
+
+    #[test]
+    fn display_formats_variable() {
+        assert_eq!(
+            Variable {
+                ty: Type::UINT32_T,
+                name: "A".to_string()
+            }
+            .to_string(),
+            "ulA"
+        );
+        assert_eq!(
+            Variable {
+                ty: Type::INT8_T.to_ptr(),
+                name: "Counter".to_string()
+            }
+            .to_string(),
+            "pcCounter"
+        );
+    }
+
+    #[test]
+    fn display_formats_api_function() {
+        assert_eq!(
+            Function {
+                ret_ty: Some(Type::VOID),
                 name: "QueueDelete".to_string()
             }
+            .to_string(),
+            "vQueueDelete"
         );
-
-        let fun = Fun::parse(&mut Scanner::new("ulTaskNotifyTake")).unwrap();
         assert_eq!(
-            fun,
-            Fun::Api {
-                ret: Ty::UINT32_T,
+            Function {
+                ret_ty: Some(Type::UINT32_T),
                 name: "TaskNotifyTake".to_string()
             }
+            .to_string(),
+            "ulTaskNotifyTake"
         );
-
-        let fun = Fun::parse(&mut Scanner::new("pvTimerGetTimerID")).unwrap();
         assert_eq!(
-            fun,
-            Fun::Api {
-                ret: Ty::VOID.ptr(),
+            Function {
+                ret_ty: Some(Type::VOID.to_ptr()),
                 name: "TimerGetTimerID".to_string()
             }
+            .to_string(),
+            "pvTimerGetTimerID"
         );
-
-        let fun = Fun::parse(&mut Scanner::new("prvYieldCore")).unwrap();
-        assert_eq!(
-            fun,
-            Fun::Privileged {
-                name: "YieldCore".to_string()
-            }
-        )
     }
 
     #[test]
-    fn test_parse_macro() {
-        let mac = Macro::parse(&mut Scanner::new("portYIELD_CORE")).unwrap();
+    fn display_formats_privileged_function() {
         assert_eq!(
-            mac,
-            Macro::new("port".to_string(), "YIELD_CORE".to_string())
+            Function {
+                ret_ty: None,
+                name: "YieldCore".to_string()
+            }
+            .to_string(),
+            "prvYieldCore"
         );
+    }
 
-        let mac = Macro::parse(&mut Scanner::new("configUSE_MUTEXES")).unwrap();
+    #[test]
+    fn display_formats_macro() {
         assert_eq!(
-            mac,
-            Macro::new("config".to_string(), "USE_MUTEXES".to_string())
+            Macro {
+                module: "port".to_string(),
+                name: "YIELD_CORE".to_string()
+            }
+            .to_string(),
+            "portYIELD_CORE"
         );
+        assert_eq!(
+            Macro {
+                module: "config".to_string(),
+                name: "USE_MUTEXES".to_string()
+            }
+            .to_string(),
+            "configUSE_MUTEXES"
+        );
+    }
 
-        assert!(Macro::parse(&mut Scanner::new("ConfigUseMessageQueue")).is_none());
+    #[test]
+    fn display_identifier_delegates_to_variant() {
+        assert_eq!(
+            Identifier::Var(Variable {
+                ty: Type::UINT32_T,
+                name: "A".to_string()
+            })
+            .to_string(),
+            "ulA"
+        );
+        assert_eq!(
+            Identifier::Fun(Function {
+                ret_ty: None,
+                name: "YieldCore".to_string()
+            })
+            .to_string(),
+            "prvYieldCore"
+        );
+        assert_eq!(
+            Identifier::Mac(Macro {
+                module: "port".to_string(),
+                name: "YIELD_CORE".to_string()
+            })
+            .to_string(),
+            "portYIELD_CORE"
+        );
+    }
+
+    #[test]
+    fn parse_recognizes_variable() {
+        // `A` alone trivially satisfies the macro-name (all-caps) check, so
+        // this only classifies correctly if a decodable type prefix wins.
+        assert_eq!(
+            "ulA".parse::<Identifier>(),
+            Ok(Identifier::Var(Variable {
+                ty: Type::UINT32_T,
+                name: "A".to_string()
+            }))
+        );
+        assert_eq!(
+            "pcCounter".parse::<Identifier>(),
+            Ok(Identifier::Var(Variable {
+                ty: Type::INT8_T.to_ptr(),
+                name: "Counter".to_string()
+            }))
+        );
+    }
+
+    #[test]
+    fn parse_recognizes_custom_type() {
+        assert_eq!(
+            "xQueueHandle".parse::<Identifier>(),
+            Ok(Identifier::Var(Variable {
+                ty: Type {
+                    ty: BaseTy::Custom,
+                    ptr: false,
+                    sign: true
+                },
+                name: "QueueHandle".to_string()
+            }))
+        );
+        assert_eq!(
+            "xTaskCreate()".parse::<Identifier>(),
+            Ok(Identifier::Fun(Function {
+                ret_ty: Some(Type {
+                    ty: BaseTy::Custom,
+                    ptr: false,
+                    sign: true
+                }),
+                name: "TaskCreate".to_string()
+            }))
+        );
+    }
+
+    #[test]
+    fn parse_recognizes_privileged_function_without_call() {
+        // `prv` is exclusively a function-privacy marker in FreeRTOS, so it
+        // doesn't need a trailing `(...)` to be recognized as a function.
+        assert_eq!(
+            "prvCounter".parse::<Identifier>(),
+            Ok(Identifier::Fun(Function {
+                ret_ty: None,
+                name: "Counter".to_string()
+            }))
+        );
+    }
+
+    #[test]
+    fn parse_recognizes_api_function() {
+        assert_eq!(
+            "vQueueDelete()".parse::<Identifier>(),
+            Ok(Identifier::Fun(Function {
+                ret_ty: Some(Type::VOID),
+                name: "QueueDelete".to_string()
+            }))
+        );
+        assert_eq!(
+            "ulTaskNotifyTake(x)".parse::<Identifier>(),
+            Ok(Identifier::Fun(Function {
+                ret_ty: Some(Type::UINT32_T),
+                name: "TaskNotifyTake".to_string()
+            }))
+        );
+        assert_eq!(
+            "pvTimerGetTimerID()".parse::<Identifier>(),
+            Ok(Identifier::Fun(Function {
+                ret_ty: Some(Type::VOID.to_ptr()),
+                name: "TimerGetTimerID".to_string()
+            }))
+        );
+    }
+
+    #[test]
+    fn parse_recognizes_privileged_function() {
+        assert_eq!(
+            "prvYieldCore()".parse::<Identifier>(),
+            Ok(Identifier::Fun(Function {
+                ret_ty: None,
+                name: "YieldCore".to_string()
+            }))
+        );
+    }
+
+    #[test]
+    fn parse_recognizes_macro() {
+        assert_eq!(
+            "portYIELD_CORE".parse::<Identifier>(),
+            Ok(Identifier::Mac(Macro {
+                module: "port".to_string(),
+                name: "YIELD_CORE".to_string()
+            }))
+        );
+        assert_eq!(
+            "configUSE_MUTEXES".parse::<Identifier>(),
+            Ok(Identifier::Mac(Macro {
+                module: "config".to_string(),
+                name: "USE_MUTEXES".to_string()
+            }))
+        );
+    }
+
+    #[test]
+    fn parse_recognizes_macro_with_digit_and_underscore_prefix() {
+        assert_eq!(
+            "arm_v8YIELD_CORE".parse::<Identifier>(),
+            Ok(Identifier::Mac(Macro {
+                module: "arm_v8".to_string(),
+                name: "YIELD_CORE".to_string()
+            }))
+        );
+    }
+
+    #[test]
+    fn parse_does_not_misclassify_macro_as_function() {
+        // Regression: a naive type-prefix check could greedily match the
+        // leading `c` of `config` as the char-type prefix, mangling the
+        // rest into a bogus function name instead of recognizing the macro.
+        assert_eq!(
+            "configUSE_PREEMPTION".parse::<Identifier>(),
+            Ok(Identifier::Mac(Macro {
+                module: "config".to_string(),
+                name: "USE_PREEMPTION".to_string()
+            }))
+        );
+    }
+
+    #[test]
+    fn parse_fails_on_empty_token_stream() {
+        assert_eq!(parse(&[]), Err(ParseErr::MissingPrefix));
+    }
+
+    #[test]
+    fn parse_fails_on_incomplete_input() {
+        assert_eq!("".parse::<Identifier>(), Err(ParseErr::MissingIdent));
+        assert_eq!("(".parse::<Identifier>(), Err(ParseErr::MissingIdent));
+    }
+
+    #[test]
+    fn parse_fails_without_type_prefix() {
+        // No lowercase run precedes the leading capital, so this tokenizes
+        // to an empty `Prefix` -- neither a known type, `prv`, nor snake_case.
+        assert_eq!(
+            "QueueDelete".parse::<Identifier>(),
+            Err(ParseErr::UnknownPrefix)
+        );
+    }
+
+    #[test]
+    fn parse_fails_without_any_ident() {
+        // No uppercase letter ever appears, so no `Ident` token is produced.
+        assert_eq!("hello".parse::<Identifier>(), Err(ParseErr::MissingIdent));
+    }
+
+    #[test]
+    fn parse_fails_on_illegal_api_function_name() {
+        // The name has an underscore, so it isn't `PascalCase`.
+        assert_eq!(
+            "vQueue_Delete()".parse::<Identifier>(),
+            Err(ParseErr::IllegalFunctionName)
+        );
+    }
+
+    #[test]
+    fn parse_fails_on_illegal_variable_name() {
+        assert_eq!(
+            "pcQueue_Delete".parse::<Identifier>(),
+            Err(ParseErr::IllegalVariableName)
+        );
+    }
+
+    #[test]
+    fn parse_fails_on_illegal_privileged_function_name() {
+        assert_eq!(
+            "prvQueue_Delete()".parse::<Identifier>(),
+            Err(ParseErr::IllegalFunctionName)
+        );
+    }
+
+    #[test]
+    fn parse_fails_on_illegal_macro_name() {
+        // The name has a lowercase run, so it isn't `SCREAMING_SNAKE_CASE`.
+        assert_eq!(
+            "configUSE_mutexes".parse::<Identifier>(),
+            Err(ParseErr::IllegalMacroName)
+        );
     }
 }
