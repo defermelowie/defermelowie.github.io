@@ -39,14 +39,17 @@ Instead, this lookup tool allows to make a distinction by putting parenthesis af
     const suggestionsContainer = document.getElementById('suggest-ident-container');
     let selectedSuggestionIdx = -1;
 
+    const MIN_QUERY_LEN = 3;   // Shorter queries get no suggestions nor info
+    const MAX_SUGGESTIONS = 10;
+
     /** 
      * Populate suggestion container based on the current search query
-     * @param {string[]} query
+     * @param {string} query
      */
-     function showSuggestions(query) {
-         const suggestions = search(query, 3);
-         suggestionsContainer.innerHTML = '';
-         selectedSuggestionIdx = 0;
+    function showSuggestions(query) {
+        const suggestions = search(query, MIN_QUERY_LEN, MAX_SUGGESTIONS);
+        suggestionsContainer.innerHTML = '';
+        selectedSuggestionIdx = 0;
 
         // Log an error if suggestions is empty
         if (suggestions.length === 0) {
@@ -83,40 +86,41 @@ Instead, this lookup tool allows to make a distinction by putting parenthesis af
 
         // Highlight selected suggestion
         updateSelectedSuggestion(suggestionsContainer.querySelectorAll('.suggestion-item'));
-     }
+    }
 
-     function showInfo(name) {
-         infoContainer.innerHTML = '';
+    function showInfo(name) {
+        infoContainer.innerHTML = '';
 
-         const info = lookup(name);
-         const nameContainer = document.createElement('h1');
-         if (info === undefined) {
-             nameContainer.innerText = 'Unknown identifier ' + name;
-             infoContainer.appendChild(nameContainer);
-             return;
-         }
+        const info = lookup(name);
+        const nameContainer = document.createElement('h1');
+        if (info === undefined) {
+            nameContainer.innerText = 'Unknown identifier ' + name;
+            infoContainer.appendChild(nameContainer);
+            return;
+        }
 
-         nameContainer.innerText = info.kind.charAt(0).toUpperCase() + info.kind.slice(1) + " " + info.name;
-         infoContainer.appendChild(nameContainer);
+        nameContainer.innerText = info.kind.charAt(0).toUpperCase() + info.kind.slice(1) + " " + info.name;
+        infoContainer.appendChild(nameContainer);
 
-         const ty = info.ty;
-         if (typeof ty === 'string') {
-             const typeContainer = document.createElement('p');
-             typeContainer.innerText = 'type: ' + ty;
-             infoContainer.appendChild(typeContainer);
-         }
+        // Optional fields: a Rust `None` arrives as `undefined`
+        const ty = info.ty;
+        if (ty !== undefined) {
+            const typeContainer = document.createElement('p');
+            typeContainer.innerText = 'type: ' + ty;
+            infoContainer.appendChild(typeContainer);
+        }
 
-         const doc_link = info.doc;
-         if (typeof doc_link === 'string') {
-             const docContainer = document.createElement('a');
-             docContainer.href = doc_link;
-             docContainer.textContent = 'View Documentation';
-             docContainer.target = '_blank';
-             infoContainer.appendChild(docContainer);
-         }
+        const doc_link = info.doc;
+        if (doc_link !== undefined) {
+            const docContainer = document.createElement('a');
+            docContainer.href = doc_link;
+            docContainer.textContent = 'View Documentation';
+            docContainer.target = '_blank';
+            infoContainer.appendChild(docContainer);
+        }
 
-         info.free(); // `Info` lives in wasm memory
-     }
+        info.free(); // `Info` lives in wasm memory
+    }
 
     // Update the selected suggestion's appearance
     function updateSelectedSuggestion(suggestions) {
@@ -145,7 +149,11 @@ Instead, this lookup tool allows to make a distinction by putting parenthesis af
     searchField.addEventListener('input', (event) => {
         const query = event.target.value;
         showSuggestions(query);
-        showInfo(query);
+        if (query.trim().length < MIN_QUERY_LEN) {
+            infoContainer.innerHTML = ''; // Too short to say anything useful
+        } else {
+            showInfo(query);
+        }
     });
 
     // Handle keyboard navigation
@@ -153,7 +161,9 @@ Instead, this lookup tool allows to make a distinction by putting parenthesis af
         const suggestions = suggestionsContainer.querySelectorAll('.suggestion-item');
         const suggestionCount = suggestions.length;
         
-        if (suggestionCount === 1) {
+        // Nothing to navigate: the list is either empty or holds the query
+        // itself plus at least one suggestion
+        if (suggestionCount < 2) {
             return;
         }
 
@@ -164,7 +174,7 @@ Instead, this lookup tool allows to make a distinction by putting parenthesis af
             break;
             case 'ArrowUp':
                 event.preventDefault();
-                selectedSuggestionIdx = (selectedSuggestionIdx - 1) % suggestionCount;
+                selectedSuggestionIdx = (selectedSuggestionIdx - 1 + suggestionCount) % suggestionCount;
             break;
             case 'Enter':
                 event.preventDefault();

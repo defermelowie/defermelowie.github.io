@@ -1,67 +1,67 @@
 [
     {
-        "ident": "xTaskCreate",
-        "returns": "BaseType_t",
+        "ident": "xTaskCreate()",
+        "type": "BaseType_t",
         "docs": "https://www.freertos.org/Documentation/02-Kernel/04-API-references/01-Task-creation/01-xTaskCreate"
     },
     {
-        "ident": "xTaskCreateStatic",
-        "returns": "TaskHandle_t",
+        "ident": "xTaskCreateStatic()",
+        "type": "TaskHandle_t",
         "docs": "https://www.freertos.org/Documentation/02-Kernel/04-API-references/01-Task-creation/02-xTaskCreateStatic"
     },
     {
-        "ident": "vTaskDelete",
+        "ident": "vTaskDelete()",
         "docs": "https://www.freertos.org/Documentation/02-Kernel/04-API-references/01-Task-creation/03-vTaskDelete"
     },
     {
-        "ident": "vTaskDelay",
+        "ident": "vTaskDelay()",
         "docs": "https://freertos.org/Documentation/02-Kernel/04-API-references/02-Task-control/01-vTaskDelay"
     },
     {
-        "ident": "xTaskDelayUntil",
-        "returns": "BaseType_t",
+        "ident": "xTaskDelayUntil()",
+        "type": "BaseType_t",
         "docs": "https://freertos.org/Documentation/02-Kernel/04-API-references/02-Task-control/02-xTaskDelayUntil"
     },
     {
-        "ident": "uxTaskPriorityGet",
-        "returns": "UBaseType_t",
+        "ident": "uxTaskPriorityGet()",
+        "type": "UBaseType_t",
         "docs": "https://freertos.org/Documentation/02-Kernel/04-API-references/02-Task-control/04-uxTaskPriorityGet"
     },
     {
-        "ident": "uxTaskPriorityGetFromISR",
-        "returns": "UBaseType_t",
+        "ident": "uxTaskPriorityGetFromISR()",
+        "type": "UBaseType_t",
         "docs": "https://freertos.org/Documentation/02-Kernel/04-API-references/02-Task-control/10-uxTaskPriorityGetFromISR"
     },
     {
-        "ident": "uxTaskBasePriorityGet",
-        "returns": "UBaseType_t",
+        "ident": "uxTaskBasePriorityGet()",
+        "type": "UBaseType_t",
         "docs": "https://freertos.org/Documentation/02-Kernel/04-API-references/02-Task-control/11-uxTaskBasePriorityGet"
     },
     {
-        "ident": "uxTaskBasePriorityGetFromISR",
-        "returns": "UBaseType_t",
+        "ident": "uxTaskBasePriorityGetFromISR()",
+        "type": "UBaseType_t",
         "docs": "https://freertos.org/Documentation/02-Kernel/04-API-references/02-Task-control/12-uxTaskBasePriorityGetFromISR"
     },
     {
-        "ident": "vTaskPrioritySet",
+        "ident": "vTaskPrioritySet()",
         "docs": "https://freertos.org/Documentation/02-Kernel/04-API-references/02-Task-control/05-vTaskPrioritySet"
     },
     {
-        "ident": "vTaskSuspend",
+        "ident": "vTaskSuspend()",
         "docs": "https://freertos.org/Documentation/02-Kernel/04-API-references/02-Task-control/06-vTaskSuspend"
     },
     {
-        "ident": "vTaskResume",
+        "ident": "vTaskResume()",
         "docs": "https://freertos.org/Documentation/02-Kernel/04-API-references/02-Task-control/07-vTaskResume"
     },
     {
-        "ident": "xTaskResumeFromISR",
-        "returns": "BaseType_t",
+        "ident": "xTaskResumeFromISR()",
+        "type": "BaseType_t",
         "docs": "https://freertos.org/Documentation/02-Kernel/04-API-references/02-Task-control/08-xTaskResumeFromISR"
     },
     {
-        "ident": "xTaskAbortDelay",
-        "returns": "BaseType_t",
+        "ident": "xTaskAbortDelay()",
+        "type": "BaseType_t",
         "docs": "https://freertos.org/Documentation/02-Kernel/04-API-references/02-Task-control/09-xTaskAbortDelay"
     }
 ]

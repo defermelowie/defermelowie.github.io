@@ -1,5 +1,5 @@
 //! Parser for FreeRTOS identifiers, built on the token stream produced by
-//! [`tokens::tokenize`] -- i.e. `&[Tokens] -> Result<Identifier, ParseErr>`
+//! [`tokens::tokenize`] -- i.e. `&[Token] -> Result<Identifier, ParseErr>`
 //!
 //! Doc: https://freertos.org/Documentation/02-Kernel/06-Coding-guidelines/02-FreeRTOS-Coding-Standard-and-Style-Guide#naming-conventions
 
@@ -10,8 +10,11 @@ use crate::tokens::{self, Token};
 /// A parse error
 // TODO: implement `std::error::Error` (+ `Display`) so this composes with
 // `?`, `Box<dyn Error>`, etc. like a proper error type.
+// That `Display` would also let `lib::lookup` pass the reason on to the page
+// (e.g. "macro names must be UPPER_SNAKE_CASE") instead of discarding it and
+// only showing "Unknown identifier".
 #[derive(Debug, PartialEq, Eq)]
-pub enum ParseErr {
+pub(crate) enum ParseErr {
     MissingPrefix,
     MissingIdent,
     UnknownPrefix,
@@ -30,13 +33,6 @@ enum BaseTy {
     Custom,
 }
 
-impl BaseTy {
-    /// Does this base type have a fixed-width `stdint.h` name (`int32_t`, ...)?
-    const fn is_stdint(&self) -> bool {
-        matches!(self, BaseTy::Long | BaseTy::Short | BaseTy::Char)
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) struct Type {
     ty: BaseTy,
@@ -46,20 +42,23 @@ pub(crate) struct Type {
     sign: bool,
 }
 
+/// Shorthands for building expected values in tests
+#[cfg(test)]
 #[rustfmt::skip]
 impl Type {
-    pub const UINT32_T: Self = Self { ptr: false, sign: false, ty: BaseTy::Long };
-    pub const INT32_T: Self  = Self { ptr: false, sign: true,  ty: BaseTy::Long };
-    pub const UINT16_T: Self = Self { ptr: false, sign: false, ty: BaseTy::Short };
-    pub const INT16_T: Self  = Self { ptr: false, sign: true,  ty: BaseTy::Short };
-    pub const UINT8_T: Self  = Self { ptr: false, sign: false, ty: BaseTy::Char };
-    pub const INT8_T: Self   = Self { ptr: false, sign: true,  ty: BaseTy::Char };
-    pub const VOID: Self     = Self { ptr: false, sign: true,  ty: BaseTy::Void };
- }
+    const UINT32_T: Self = Self { ptr: false, sign: false, ty: BaseTy::Long };
+    const INT32_T: Self  = Self { ptr: false, sign: true,  ty: BaseTy::Long };
+    const UINT16_T: Self = Self { ptr: false, sign: false, ty: BaseTy::Short };
+    const INT16_T: Self  = Self { ptr: false, sign: true,  ty: BaseTy::Short };
+    const UINT8_T: Self  = Self { ptr: false, sign: false, ty: BaseTy::Char };
+    const CHAR: Self     = Self { ptr: false, sign: true,  ty: BaseTy::Char };
+    const VOID: Self     = Self { ptr: false, sign: true,  ty: BaseTy::Void };
+}
 
 impl Type {
     /// Convert a type to its pointer variant
-    pub const fn to_ptr(mut self) -> Self {
+    #[cfg(test)]
+    const fn to_ptr(mut self) -> Self {
         self.ptr = true;
         self
     }
@@ -127,32 +126,31 @@ impl std::str::FromStr for Type {
 }
 
 impl std::fmt::Display for Type {
+    /// Format as a C type, e.g. `uint32_t`, `char *` or `unsigned enum`
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.ty.is_stdint() {
-            if self.ptr {
-                f.write_char('*')?;
-            }
-            if !self.sign {
-                f.write_char('u')?;
-            }
-        } else {
-            if !self.sign {
-                f.write_str("unsigned ")?;
-            }
-            if self.ptr {
-                f.write_char('*')?;
+        if !self.sign {
+            match self.ty {
+                BaseTy::Char => (), // `uc` is `uint8_t`, see below
+                BaseTy::Long | BaseTy::Short => f.write_char('u')?,
+                _ => f.write_str("unsigned ")?,
             }
         }
 
-        let base_name = match self.ty {
+        f.write_str(match self.ty {
             BaseTy::Long => "int32_t",
             BaseTy::Short => "int16_t",
-            BaseTy::Char => "int8_t",
+            // FreeRTOS uses `c` for plain `char` and `uc` for `uint8_t`
+            BaseTy::Char if self.sign => "char",
+            BaseTy::Char => "uint8_t",
             BaseTy::Enum => "enum",
             BaseTy::Void => "void",
             BaseTy::Custom => "custom",
-        };
-        f.write_str(base_name)
+        })?;
+
+        if self.ptr {
+            f.write_str(" *")?;
+        }
+        Ok(())
     }
 }
 
@@ -335,13 +333,20 @@ mod test {
         assert_eq!(Type::UINT16_T.to_string(), "uint16_t");
         assert_eq!(Type::INT16_T.to_string(), "int16_t");
         assert_eq!(Type::UINT8_T.to_string(), "uint8_t");
-        assert_eq!(Type::INT8_T.to_string(), "int8_t");
+        assert_eq!(Type::CHAR.to_string(), "char");
     }
 
     #[test]
     fn display_formats_pointer_to_stdint_type() {
-        assert_eq!(Type::UINT8_T.to_ptr().to_string(), "*uint8_t");
-        assert_eq!(Type::INT32_T.to_ptr().to_string(), "*int32_t");
+        assert_eq!(Type::UINT8_T.to_ptr().to_string(), "uint8_t *");
+        assert_eq!(Type::INT32_T.to_ptr().to_string(), "int32_t *");
+    }
+
+    #[test]
+    fn display_formats_char_pointer() {
+        // e.g. `pcTaskGetName()`
+        assert_eq!(Type::CHAR.to_ptr().to_string(), "char *");
+        assert_eq!(Type::VOID.to_ptr().to_string(), "void *");
     }
 
     #[test]
@@ -351,8 +356,7 @@ mod test {
 
     #[test]
     fn display_formats_non_stdint_types() {
-        // Non-stdint types put `unsigned`/`*` differently: `unsigned ` as a
-        // word prefix, and the `*` after it rather than before.
+        // Non-stdint types spell out `unsigned ` as a word prefix
         assert_eq!(
             Type {
                 ty: BaseTy::Enum,
@@ -378,7 +382,7 @@ mod test {
                 sign: true
             }
             .to_string(),
-            "*enum"
+            "enum *"
         );
     }
 
@@ -420,7 +424,7 @@ mod test {
         );
         assert_eq!(
             Variable {
-                ty: Type::INT8_T.to_ptr(),
+                ty: Type::CHAR.to_ptr(),
                 name: "Counter".to_string()
             }
             .to_string(),
@@ -530,7 +534,7 @@ mod test {
         assert_eq!(
             "pcCounter".parse::<Identifier>(),
             Ok(Identifier::Var(Variable {
-                ty: Type::INT8_T.to_ptr(),
+                ty: Type::CHAR.to_ptr(),
                 name: "Counter".to_string()
             }))
         );

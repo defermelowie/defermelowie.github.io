@@ -2,6 +2,9 @@
 
 /**
  * Everything known about a looked up identifier
+ *
+ * NOTE: optional fields that are `None` read as `undefined` in JS, so check
+ * for that before using them.
  */
 export class Info {
     static __wrap(ptr) {
@@ -130,14 +133,19 @@ export function lookup(query) {
 }
 
 /**
+ * Suggest known identifiers for `query`
+ *
+ * Returns `query` itself, followed by at most `max_suggestions` known
+ * identifiers once `query` is at least `min_len` long.
  * @param {string} query
  * @param {number} min_len
+ * @param {number} max_suggestions
  * @returns {string[]}
  */
-export function search(query, min_len) {
+export function search(query, min_len, max_suggestions) {
     const ptr0 = passStringToWasm0(query, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.search(ptr0, len0, min_len);
+    const ret = wasm.search(ptr0, len0, min_len, max_suggestions);
     var v2 = getArrayJsValueFromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
     return v2;
