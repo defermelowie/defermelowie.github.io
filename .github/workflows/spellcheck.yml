@@ -1,0 +1,17 @@
+name: Spellcheck
+
+on:
+  push:
+    branches: [ "*" ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  spellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: vale-cli/vale-action@v2.1.1
+        with:
+          files: site/content/
