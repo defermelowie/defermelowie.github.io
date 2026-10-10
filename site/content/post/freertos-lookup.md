@@ -31,7 +31,7 @@ Instead, this lookup tool allows to make a distinction by putting parenthesis af
 <!-- End of content -->
 
 <script type="module">
-    import init, { search, type_of, ident_of, kind_of, doc_url } from '/freertos_lookup.js';
+    import init, { search, lookup } from '/freertos_lookup.js';
     await init();
     
     const searchField = document.getElementById('search-ident-field');
@@ -88,15 +88,25 @@ Instead, this lookup tool allows to make a distinction by putting parenthesis af
      function showInfo(name) {
          infoContainer.innerHTML = '';
 
+         const info = lookup(name);
          const nameContainer = document.createElement('h1');
-         nameContainer.innerText = kind_of(name).charAt(0).toUpperCase() + kind_of(name).slice(1) + " " + ident_of(name);
-         infoContainer.appendChild(nameContainer);
-         
-         const typeContainer = document.createElement('p');
-         typeContainer.innerText = 'type: ' + type_of(name);
-         infoContainer.appendChild(typeContainer);
+         if (info === undefined) {
+             nameContainer.innerText = 'Unknown identifier ' + name;
+             infoContainer.appendChild(nameContainer);
+             return;
+         }
 
-         const doc_link = doc_url(name);
+         nameContainer.innerText = info.kind.charAt(0).toUpperCase() + info.kind.slice(1) + " " + info.name;
+         infoContainer.appendChild(nameContainer);
+
+         const ty = info.ty;
+         if (typeof ty === 'string') {
+             const typeContainer = document.createElement('p');
+             typeContainer.innerText = 'type: ' + ty;
+             infoContainer.appendChild(typeContainer);
+         }
+
+         const doc_link = info.doc;
          if (typeof doc_link === 'string') {
              const docContainer = document.createElement('a');
              docContainer.href = doc_link;
@@ -104,6 +114,8 @@ Instead, this lookup tool allows to make a distinction by putting parenthesis af
              docContainer.target = '_blank';
              infoContainer.appendChild(docContainer);
          }
+
+         info.free(); // `Info` lives in wasm memory
      }
 
     // Update the selected suggestion's appearance

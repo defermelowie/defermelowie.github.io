@@ -1,5 +1,5 @@
 //! Parser for FreeRTOS identifiers, built on the token stream produced by
-//! [`tokens::tokenize`].
+//! [`tokens::tokenize`] -- i.e. `&[Tokens] -> Result<Identifier, ParseErr>`
 //!
 //! Doc: https://freertos.org/Documentation/02-Kernel/06-Coding-guidelines/02-FreeRTOS-Coding-Standard-and-Style-Guide#naming-conventions
 
@@ -223,6 +223,15 @@ impl Identifier {
             Identifier::Var(_) => "variable",
             Identifier::Fun(_) => "function",
             Identifier::Mac(_) => "macro",
+        }
+    }
+
+    /// The (return) type of this identifier, if it has one
+    pub(crate) fn ty(&self) -> Option<Type> {
+        match self {
+            Identifier::Var(var) => Some(var.ty),
+            Identifier::Fun(fun) => fun.ret_ty,
+            Identifier::Mac(_) => None,
         }
     }
 }
