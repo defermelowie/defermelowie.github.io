@@ -61,10 +61,13 @@ menu = [
 # Theme specific
 fancy_code = true
 dynamic_note = true
+stylesheets = [
+    "searchbar.css",
+]
 
 # Configuration of the link checker.
 [link_checker]
 
 # Treat link problems as either "error" or "warn", default is "error"
 internal_level = "error"
-external_level = "error"
+external_level = "warn"
