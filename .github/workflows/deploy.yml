@@ -32,7 +32,7 @@ jobs:
             toolchain: stable
 
       - name: Setup Zola
-        uses: taiki-e/install-action@v2.85.4
+        uses: taiki-e/install-action@v2.88.0
         with:
           tool: zola@0.20.0
 
